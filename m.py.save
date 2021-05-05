@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+from time import sleep import Wifi import subprocess as Sub import serial import multiprocessing
+#import UDP as udp
+import tone import os import sys import mainAudio import threading if not os.getegid()==0:
+        sys.exit("root needed")
+#GPIO IMPORT
+from pyA20.gpio import gpio from pyA20.gpio import port my_relay=port.PA12 ringTrigger = port.PA6 gpio.init() gpio.setcfg(ringTrigger , gpio.INPUT) gpio.pullup(ringTrigger , gpio.PULLUP) gpio.setcfg(my_relay , gpio.OUTPUT) 
+gpio.output(my_relay , 1)
+#Balebot LIB IMPORT
+from balebot.handlers import * from balebot.filters import * from balebot.models.base_models import Peer from balebot.models.messages import * from balebot.updater import Updater from balebot.config import Config
+ 
+updater = Updater(token="Your Token") dispatcher = updater.dispatcher global_peer=None global_bot=None
+#Ser init:
+Sub.call("mkdir /sys/kernel/config/device-tree/overlays/uart1" , shell=True) Sub.call("cat /boot/dtb/overlay/sun8i-h3-uart1.dtbo > /sys/kernel/config/device-tree/overlays/uart1/dtbo" , shell=True) ser = serial.Serial(port = 
+"/dev/ttyS1", baudrate=1200) ser.close() ser.open() def Record():
+	mainAudio.record() def Stream(IP):
+	mainAudio.SM(IP) def rec_mes():
+     print("recording massage")
+     gpio.output(my_relay , 0)#open relay
+    # recorder.main()
+     #strat recording
+    # p=multiprocessing.Process(target=Record) p.start() p.join()
+     Record()
+     gpio.output(my_relay , 1)#close relay
+     print("The massage has been taken")
+	
+def runbot():
+	global global_peer,global_bot
+	def success(result):
+		print("success : ", result)
+	
+ 
+	def failure(result):
+		print("failure : ", result)
+	
+	@dispatcher.command_handler("/start")
+	def start_command(bot, update):
+		global_bot=bot
+		user_peer = update.get_effective_user()
+		message= TextMessage(text="ENTER YOUR PASSWORD TO START")
+		bot.send_message( message,user_peer, success_callback=success, failure_callback=failure)
+		
+		
+	@dispatcher.command_handler("S2142")
+	def register_command(bot, update):
+		user_peer = update.get_effective_user()
+		global_peer.append(user_peer)
+		
+		message= TextMessage(text="Now you are registered")
+		bot.send_message( message,user_peer, success_callback=success, failure_callback=failure)
+		
+		
+	@dispatcher.command_handler("P2142")
+	def unregister_command(bot, update):
+	    user_peer = update.get_effective_user()
+		global_peer.remove(user_peer)
+		message= TextMessage(text="Now you are out of the system")
+		bot.send_message(message , user_peer, success_callback=success, failure_callback=failure)
+    
+    updater.run() def botSendVoice():
+	document_message = DocumentMessage(file_id="/home/ali/code/MP/message.wav", access_hash="/home/ali/code/MP/message.wav", name="message", file_size=os.path.getsize('/home/ali/code/MP/message.wav'),
+                mime_type="audio/x-wav", caption_text=".....")
+	global global_bot , global_peer
+	for my_peer in global_peer:
+		bot.send_message(document_message, my_peer, success_callback=success, failure_callback=failure) def botSend(mytext ):
+	global global_bot , global_peer
+	message= TextMessage(text=mytext)
+	for my_peer in global_peer:
+		bot.send_message(message, my_peer, success_callback=success, failure_callback=failure) def ringDec():
+	ringDelay=0
+	ringCounter=0
+	flag=0
+	global ringTrigger
+	while(True):
+		if (not gpio.input(ringTrigger)):
+#			udp.sendToAll("RING")
+			ringCounter +=1
+			flag=1
+			print("rang")
+			while (not gpio.input(ringTrigger)):
+				ringDelay=time.time()
+			if(ringCounter==3):
+			#	"""" turn trelay on """"
+				print("A New Massage !!!!!!!!!!!")
+				rec_mes()
+				ringDelay=0
+				ringCounter=0
+				flag=0
+				botSendVoice()
+			
+		if (time.time() - ringDelay >5 and flag==1):
+			ringCounter=0
+			flag=0
+			print("RING ERROR") botThread= threading.Thread(target = runbot) botThread.start() ringThread = threading.Thread(target=ringDec) ringThread.start()
+# while (True):
+	# gpioScan(bot)
+botThread.join() ringThread.join()
